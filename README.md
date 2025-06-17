@@ -1,5 +1,5 @@
 # NBA-API-Data-Getter
-Gets player season stats with sqlite into a .db file around 23,000 lines
+Gets player season stats with sqlite into a .db file around 25,168 lines
 
 HOW TO USE:
 1. Let the get data.py file run, it will automatically handle errors and give you info on whats going on
