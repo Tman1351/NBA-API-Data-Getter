@@ -24,13 +24,14 @@ SKIPPED_FILE = "./data/skipped_players.txt"
 
 # === FUNCTION: Pre-check setup ===
 
+
 def precheck_and_setup():
     """
     Ensure data folder exists and establish SQLite DB connection.
-    
+
     Returns:
         sqlite3.Connection: Database connection object.
-        
+
     Exits the program if folder creation or DB connection fails.
     """
     try:
@@ -52,10 +53,11 @@ def precheck_and_setup():
 
 # === FUNCTION: Setup database schema ===
 
+
 def setup_database(conn):
     """
     Create the player_stats table in the database if it does not exist.
-    
+
     Args:
         conn (sqlite3.Connection): Active SQLite connection.
     """
@@ -96,10 +98,11 @@ def setup_database(conn):
 
 # === FUNCTION: Save player data ===
 
+
 def save_player_data(conn, player_id, player_name, rows):
     """
     Insert or update multiple rows of player career stats into the database.
-    
+
     Args:
         conn (sqlite3.Connection): Active SQLite connection.
         player_id (int): NBA player ID.
@@ -109,7 +112,8 @@ def save_player_data(conn, player_id, player_name, rows):
     cursor = conn.cursor()
     for row in rows:
         if len(row) != 27:
-            print(f"⚠️ Unexpected row length {len(row)} for player {player_id}")
+            print(
+                f"⚠️ Unexpected row length {len(row)} for player {player_id}")
             continue
 
         season_id = row[1]
@@ -153,10 +157,11 @@ def save_player_data(conn, player_id, player_name, rows):
 
 # === FUNCTION: Log error ===
 
+
 def log_error(player_id, player_name, error):
     """
     Append error messages to a log file with timestamp.
-    
+
     Args:
         player_id (str|int): Player ID or identifier.
         player_name (str): Player name or identifier.
@@ -167,10 +172,11 @@ def log_error(player_id, player_name, error):
 
 # === FUNCTION: Log skipped players ===
 
+
 def log_skipped_player(player_id, player_name):
     """
     Append skipped player info to a CSV file.
-    
+
     Args:
         player_id (int): NBA player ID.
         player_name (str): NBA player full name.
@@ -180,10 +186,11 @@ def log_skipped_player(player_id, player_name):
 
 # === FUNCTION: Update progress ===
 
+
 def update_progress(progress, total, avg_time, cooldown_time, batch_size):
     """
     Print the progress of data collection with estimated time remaining (ETA).
-    
+
     Args:
         progress (int): Number of players processed so far.
         total (int): Total number of players.
@@ -205,14 +212,15 @@ def update_progress(progress, total, avg_time, cooldown_time, batch_size):
 
 # === FUNCTION: Check if player exists ===
 
+
 def player_exists(conn, player_id):
     """
     Check if a player's stats are already in the database.
-    
+
     Args:
         conn (sqlite3.Connection): Active SQLite connection.
         player_id (int): NBA player ID.
-        
+
     Returns:
         bool: True if player data exists, False otherwise.
     """
@@ -223,11 +231,12 @@ def player_exists(conn, player_id):
 
 # === FUNCTION: Main collection ===
 
+
 def collect_all_stats(conn):
     """
     Collect career stats for all NBA players from nba_api and save to DB.
     Handles retries, cooldowns, progress updates, and error logging.
-    
+
     Args:
         conn (sqlite3.Connection): Active SQLite connection.
     """
@@ -241,8 +250,8 @@ def collect_all_stats(conn):
     INITIAL_TIMEOUT = 20
     BACKOFF_FACTOR = 2
 
-    BATCH_SIZE = 500
-    COOLDOWN_TIME = 60  # seconds (long pause after each batch)
+    BATCH_SIZE = 600
+    COOLDOWN_TIME = 240  # seconds (long pause after each batch)
 
     for idx, player in enumerate(all_players):
         player_id = player['id']
@@ -320,15 +329,15 @@ def collect_all_stats(conn):
             print(
                 f"😴 Cooldown: Pausing for {COOLDOWN_TIME} seconds after batch of {BATCH_SIZE} players...")
             for remaining in range(COOLDOWN_TIME, 0, -1):
-                sys.stdout.write(f"\r⏳ Countdown: {remaining}s remaining... ")
-                sys.stdout.flush()
+                print(f"\r⏳ Countdown: {remaining}s remaining... ")
                 time.sleep(1)
-            sys.stdout.write(
+            print(
                 "\r⌛ Countdown: Complete ✅                      \n")
             print(
                 f"Restarting collecting data for the next {BATCH_SIZE} players!\n")
 
 # === SCRIPT RUN ===
+
 
 def main():
     """
@@ -340,6 +349,7 @@ def main():
     setup_database(conn)
     collect_all_stats(conn)
     print("🏁 Finished collecting NBA data.")
+
 
 if __name__ == "__main__":
     try:
