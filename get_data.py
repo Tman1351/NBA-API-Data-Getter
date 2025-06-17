@@ -18,7 +18,7 @@ import numpy as np
 # === CONFIG ===
 
 DATA_FOLDER = "./data"
-DB_PATH = "./data/nba_2000-25_stats.db"
+DB_PATH = "./data/nba_season_player_stats.db"
 LOG_FILE = "./data/error_log.txt"
 SKIPPED_FILE = "./data/skipped_players.txt"
 
@@ -187,28 +187,25 @@ def log_skipped_player(player_id, player_name):
 # === FUNCTION: Update progress ===
 
 
-def update_progress(progress, total, avg_time, cooldown_time, batch_size):
+def update_progress(progress, total, avg_time):
     """
-    Print the progress of data collection with estimated time remaining (ETA).
+    Print the progress of data collection with estimated time remaining (ETA),
+    based on average time per player.
 
     Args:
         progress (int): Number of players processed so far.
         total (int): Total number of players.
         avg_time (float): Average time per player in seconds.
-        cooldown_time (int): Cooldown duration in seconds after each batch.
-        batch_size (int): Number of players processed per batch.
     """
     percent_done = (progress / total) * 100
     remaining = total - progress
 
-    cooldowns_left = max(int(np.ceil(remaining / batch_size)), 0)
-    total_cooldown_time = cooldowns_left * cooldown_time
-
-    eta_seconds = (avg_time * remaining) + total_cooldown_time
+    eta_seconds = avg_time * remaining
     eta_minutes = int(eta_seconds // 60)
     eta_secs = int(eta_seconds % 60)
 
     print(f"✅ {progress}/{total} players completed | ({percent_done:.2f}%) done | ETA: {eta_minutes}m {eta_secs}s")
+
 
 # === FUNCTION: Check if player exists ===
 
@@ -250,9 +247,6 @@ def collect_all_stats(conn):
     INITIAL_TIMEOUT = 20
     BACKOFF_FACTOR = 2
 
-    BATCH_SIZE = 600
-    COOLDOWN_TIME = 240  # seconds (long pause after each batch)
-
     for idx, player in enumerate(all_players):
         player_id = player['id']
         player_name = player['full_name']
@@ -291,8 +285,7 @@ def collect_all_stats(conn):
                 times.append(duration)
 
                 avg_time = sum(times) / len(times) if times else 0
-                update_progress(idx + 1, total, avg_time,
-                                COOLDOWN_TIME, BATCH_SIZE)
+                update_progress(idx + 1, total, avg_time)
                 success = True
 
             except (Timeout, ReadTimeout, ConnectionError) as e:
@@ -323,18 +316,6 @@ def collect_all_stats(conn):
 
         # Polite delay after every request
         time.sleep(JITTER_DELAY())
-
-        # Long break every N players
-        if (idx + 1) % BATCH_SIZE == 0:
-            print(
-                f"😴 Cooldown: Pausing for {COOLDOWN_TIME} seconds after batch of {BATCH_SIZE} players...")
-            for remaining in range(COOLDOWN_TIME, 0, -1):
-                print(f"\r⏳ Countdown: {remaining}s remaining... ")
-                time.sleep(1)
-            print(
-                "\r⌛ Countdown: Complete ✅                      \n")
-            print(
-                f"Restarting collecting data for the next {BATCH_SIZE} players!\n")
 
 # === SCRIPT RUN ===
 
