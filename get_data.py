@@ -24,8 +24,15 @@ SKIPPED_FILE = "./data/skipped_players.txt"
 
 # === FUNCTION: Pre-check setup ===
 
-
 def precheck_and_setup():
+    """
+    Ensure data folder exists and establish SQLite DB connection.
+    
+    Returns:
+        sqlite3.Connection: Database connection object.
+        
+    Exits the program if folder creation or DB connection fails.
+    """
     try:
         if not os.path.exists(DATA_FOLDER):
             print(f"📁 '{DATA_FOLDER}' folder missing. Creating it...")
@@ -45,8 +52,13 @@ def precheck_and_setup():
 
 # === FUNCTION: Setup database schema ===
 
-
 def setup_database(conn):
+    """
+    Create the player_stats table in the database if it does not exist.
+    
+    Args:
+        conn (sqlite3.Connection): Active SQLite connection.
+    """
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS player_stats (
@@ -84,23 +96,22 @@ def setup_database(conn):
 
 # === FUNCTION: Save player data ===
 
-
 def save_player_data(conn, player_id, player_name, rows):
+    """
+    Insert or update multiple rows of player career stats into the database.
+    
+    Args:
+        conn (sqlite3.Connection): Active SQLite connection.
+        player_id (int): NBA player ID.
+        player_name (str): NBA player full name.
+        rows (list): List of player stats rows from API.
+    """
     cursor = conn.cursor()
     for row in rows:
-        # The row structure from PlayerCareerStats is:
-        # [player_id, season_id, _, team_id, team_abbreviation, league_id,
-        #  gp, gs, min, fgm, fga, fg_pct, fg3m, fg3a, fg3_pct,
-        #  ftm, fta, ft_pct, oreb, dreb, reb, ast, stl, blk, tov, pf, pts]
-
-        # We need to skip the first player_id (since we pass it separately)
-        # and the underscore column (index 2)
         if len(row) != 27:
-            print(
-                f"⚠️ Unexpected row length {len(row)} for player {player_id}")
+            print(f"⚠️ Unexpected row length {len(row)} for player {player_id}")
             continue
 
-        # Extract the values we need, skipping the first player_id and the underscore column
         season_id = row[1]
         team_id = row[3]
         team_abbreviation = row[4]
@@ -140,34 +151,71 @@ def save_player_data(conn, player_id, player_name, rows):
         ))
     conn.commit()
 
-
 # === FUNCTION: Log error ===
 
-
 def log_error(player_id, player_name, error):
+    """
+    Append error messages to a log file with timestamp.
+    
+    Args:
+        player_id (str|int): Player ID or identifier.
+        player_name (str): Player name or identifier.
+        error (str): Error message or traceback string.
+    """
     with open(LOG_FILE, "a") as f:
         f.write(f"[{datetime.now()}] {player_id} - {player_name}: {error}\n")
 
-# === FUNCTION:: Log skipped players ===
-
+# === FUNCTION: Log skipped players ===
 
 def log_skipped_player(player_id, player_name):
+    """
+    Append skipped player info to a CSV file.
+    
+    Args:
+        player_id (int): NBA player ID.
+        player_name (str): NBA player full name.
+    """
     with open(SKIPPED_FILE, "a") as f:
         f.write(f"{player_id},{player_name}\n")
 
 # === FUNCTION: Update progress ===
 
-
-def update_progress(progress, total, avg_time):
+def update_progress(progress, total, avg_time, cooldown_time, batch_size):
+    """
+    Print the progress of data collection with estimated time remaining (ETA).
+    
+    Args:
+        progress (int): Number of players processed so far.
+        total (int): Total number of players.
+        avg_time (float): Average time per player in seconds.
+        cooldown_time (int): Cooldown duration in seconds after each batch.
+        batch_size (int): Number of players processed per batch.
+    """
     percent_done = (progress / total) * 100
     remaining = total - progress
-    eta = avg_time * remaining
-    print(f"✅ {progress}/{total} players completed | ({percent_done:.2f}%) done | ETA: {int(eta // 60)}m {int(eta % 60)}s")
+
+    cooldowns_left = max(int(np.ceil(remaining / batch_size)), 0)
+    total_cooldown_time = cooldowns_left * cooldown_time
+
+    eta_seconds = (avg_time * remaining) + total_cooldown_time
+    eta_minutes = int(eta_seconds // 60)
+    eta_secs = int(eta_seconds % 60)
+
+    print(f"✅ {progress}/{total} players completed | ({percent_done:.2f}%) done | ETA: {eta_minutes}m {eta_secs}s")
 
 # === FUNCTION: Check if player exists ===
 
-
 def player_exists(conn, player_id):
+    """
+    Check if a player's stats are already in the database.
+    
+    Args:
+        conn (sqlite3.Connection): Active SQLite connection.
+        player_id (int): NBA player ID.
+        
+    Returns:
+        bool: True if player data exists, False otherwise.
+    """
     cursor = conn.cursor()
     cursor.execute(
         "SELECT 1 FROM player_stats WHERE player_id = ? LIMIT 1", (player_id,))
@@ -175,18 +223,26 @@ def player_exists(conn, player_id):
 
 # === FUNCTION: Main collection ===
 
-
 def collect_all_stats(conn):
+    """
+    Collect career stats for all NBA players from nba_api and save to DB.
+    Handles retries, cooldowns, progress updates, and error logging.
+    
+    Args:
+        conn (sqlite3.Connection): Active SQLite connection.
+    """
     all_players = players.get_players()
     total = len(all_players)
     times = []
 
-    # Configuration for robust API handling
-    # Seconds between requests (be polite to API)
-    def JITTER_DELAY(): return np.random.uniform(0.6, 1.5)  # A little bit of jitter
-    MAX_RETRIES = 3       # Max retry attempts per player
-    INITIAL_TIMEOUT = 20  # Start with 20s timeout (instead of 10)
-    BACKOFF_FACTOR = 2    # Double timeout on each retry (30s -> 60s)
+    # == CONFIG ==
+    def JITTER_DELAY(): return np.random.uniform(0.6, 1.5)
+    MAX_RETRIES = 3
+    INITIAL_TIMEOUT = 20
+    BACKOFF_FACTOR = 2
+
+    BATCH_SIZE = 500
+    COOLDOWN_TIME = 60  # seconds (long pause after each batch)
 
     for idx, player in enumerate(all_players):
         player_id = player['id']
@@ -199,49 +255,42 @@ def collect_all_stats(conn):
         retries = 0
         success = False
 
-        # == MAIN LOOP ==
-
         while retries <= MAX_RETRIES and not success:
             try:
                 start = time.time()
 
-                # Dynamic timeout - increases with each retry
                 current_timeout = INITIAL_TIMEOUT * \
                     (BACKOFF_FACTOR ** retries) * np.random.uniform(0.9, 1.1)
-
                 print(
-                    f"⌛ Fetching {player_name} (Timeout: {current_timeout}s)...")
+                    f"⌛ Fetching {player_name} (Timeout: {current_timeout:.1f}s)...")
 
                 career = PlayerCareerStats(
-                    player_id=player_id,
-                    timeout=current_timeout  # Apply dynamic timeout
-                )
+                    player_id=player_id, timeout=current_timeout)
                 stats_df = career.get_data_frames()[0]
 
                 if stats_df.empty:
                     print(f"🚫 No stats found for {player_name}")
-                    success = True  # Mark as handled
-                    continue
+                    success = True
+                    break
 
-                # Save successful data
                 rows = stats_df.values.tolist()
                 save_player_data(conn, player_id, player_name, rows)
 
-                # Free up space in memmory
                 del stats_df, rows, career
 
                 duration = time.time() - start
                 times.append(duration)
 
                 avg_time = sum(times) / len(times) if times else 0
-                update_progress(idx + 1, total, avg_time)
+                update_progress(idx + 1, total, avg_time,
+                                COOLDOWN_TIME, BATCH_SIZE)
                 success = True
 
             except (Timeout, ReadTimeout, ConnectionError) as e:
                 retries += 1
                 if retries > MAX_RETRIES:
-                    log_error(player_id, player_name,
-                              f"Timeout or Connection Erorr after {MAX_RETRIES} retries: {str(e)}")
+                    log_error(
+                        player_id, player_name, f"Timeout or Connection Error after {MAX_RETRIES} retries: {str(e)}")
                     log_skipped_player(player_id, player_name)
                     print(
                         f"❌ Failed {player_name} after {MAX_RETRIES} retries")
@@ -261,21 +310,36 @@ def collect_all_stats(conn):
                 log_error(player_id, player_name, traceback.format_exc())
                 log_skipped_player(player_id, player_name)
                 print(f"❗ Unexpected error with {player_name}: {str(e)}")
-                break  # Exit retry loop on non-timeout errors
+                break
 
-        # Polite delay even after success
+        # Polite delay after every request
         time.sleep(JITTER_DELAY())
+
+        # Long break every N players
+        if (idx + 1) % BATCH_SIZE == 0:
+            print(
+                f"😴 Cooldown: Pausing for {COOLDOWN_TIME} seconds after batch of {BATCH_SIZE} players...")
+            for remaining in range(COOLDOWN_TIME, 0, -1):
+                sys.stdout.write(f"\r⏳ Countdown: {remaining}s remaining... ")
+                sys.stdout.flush()
+                time.sleep(1)
+            sys.stdout.write(
+                "\r⌛ Countdown: Complete ✅                      \n")
+            print(
+                f"Restarting collecting data for the next {BATCH_SIZE} players!\n")
 
 # === SCRIPT RUN ===
 
-
 def main():
+    """
+    Main entry point to start the NBA data collection process.
+    Sets up folders, database, and begins stats collection.
+    """
     print("🚀 Starting NBA data collection...")
     conn = precheck_and_setup()
     setup_database(conn)
     collect_all_stats(conn)
     print("🏁 Finished collecting NBA data.")
-
 
 if __name__ == "__main__":
     try:
